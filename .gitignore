@@ -1,0 +1,8 @@
+/.vs
+/bin
+/obj
+/XD-API.csproj.user
+/packages
+/errorlog
+*.log
+*.pfx
