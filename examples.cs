@@ -6,6 +6,7 @@ using XDPeople.Utils;
 using System.Drawing;
 using System.Linq;
 using XDPeople.Framework;
+using Newtonsoft.Json;
 
 namespace API_EXAMPLE
 {
@@ -124,7 +125,7 @@ namespace API_EXAMPLE
             });
         }
 
-        public static void GenerateDocument(dynamic orderObjectData, string documentTypeId, int serieId, string[] itemReferences)
+        public static void GenerateDocument(OrderData orderObjectData, string documentTypeId, int serieId, string[] itemReferences, decimal shippingTaxRate = 23m)
         {
             //validate document type, same as ItemTransactionController.PostItemTransaction
             XConfigDocumentsTypesBE docConfig = GlobalVars.GlobalListXConfigDocumentsTypes
@@ -146,8 +147,8 @@ namespace API_EXAMPLE
 
             SalesDocumentManager manager = new SalesDocumentManager(Db.CurrentDatabase, documentType);
 
-            string idClient = orderObjectData["order"].idUser;
-            int rows = orderObjectData["nr_order_lines"];
+            string idClient = orderObjectData.Order.IdUser;
+            int rows = orderObjectData.NrOrderLines;
 
             manager.Init(documentTypeId, serieId);
 
@@ -171,8 +172,8 @@ namespace API_EXAMPLE
                 }
 
                 string KeyId = itemReferences[i];
-                decimal quantity = orderObjectData["order_lines"][i].quantity;
-                decimal price = orderObjectData["order_lines"][i].product_value;
+                decimal quantity = orderObjectData.OrderLines[i].Quantity;
+                decimal price = orderObjectData.OrderLines[i].ProductValue;
 
                 detailManager.SetItemID(KeyId);
                 detailManager.SetQuantity(quantity);
@@ -190,6 +191,20 @@ namespace API_EXAMPLE
 
             LoadDefaultValues(manager.CurrentDocument);
 
+            //shipment costs: order shipping_value is tax included, the document needs both
+            //the net (ShipmentNetCosts) and the tax included (ShipmentCosts) values,
+            //otherwise documents configured to show net values display the shipment as 0
+            decimal shippingValue = orderObjectData.Order.ShippingValue;
+
+            if (shippingValue > 0)
+            {
+                ItemTransactionDocument document = manager.CurrentDocument;
+
+                document.ShipmentCosts = shippingValue;
+                document.ShipmentNetCosts = Math.Round(shippingValue / (1 + shippingTaxRate / 100), 2);
+            }
+
+            //recalculate totals after the shipment costs are set
             manager.Calculate();
 
             try
@@ -205,6 +220,18 @@ namespace API_EXAMPLE
 
             try
             {
+                ItemTransactionDocument document = manager.CurrentDocument;
+
+                //debug only: serializes the document before saving so it can be inspected with a breakpoint,
+                //json isn't used anywhere
+                var settings = new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore,
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    Error = (sender, args) => { args.ErrorContext.Handled = true; }
+                };
+
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(document, settings);
 
                 if (manager.Save())
                 {
@@ -224,7 +251,7 @@ namespace API_EXAMPLE
 
         }
 
-        public static void GenerateExternalySignedDocument(dynamic orderObjectData)
+        public static void GenerateExternalySignedDocument(OrderData orderObjectData)
         {
 
             //initialize a new data context for transactions purposes
@@ -234,7 +261,7 @@ namespace API_EXAMPLE
             SalesDocumentProvider documentProvider = new SalesDocumentProvider(dataContext);
             SalesDocumentDetailManager detailManager = manager.DetailManager;
 
-            string documentTypeId = orderObjectData["documentType"];
+            string documentTypeId = orderObjectData.DocumentType;
             int serieId = 1;
 
             //validate external serie usage
@@ -247,8 +274,8 @@ namespace API_EXAMPLE
                 throw new Exception("Invalid Source Billing");
 
 
-            string idClient = orderObjectData["order"].idUser;
-            int rows = orderObjectData["nr_order_lines"];
+            string idClient = orderObjectData.Order.IdUser;
+            int rows = orderObjectData.NrOrderLines;
 
             //Start a new document
             manager.Init(documentTypeId, serieId);
@@ -264,9 +291,9 @@ namespace API_EXAMPLE
                 //Start a new document line
                 detailManager.Init(false, false);
 
-                string KeyId = orderObjectData["order_lines"][i].reference;
-                decimal quantity = orderObjectData["order_lines"][i].quantity;
-                decimal price = orderObjectData["order_lines"][i].product_value;
+                string KeyId = orderObjectData.OrderLines[i].Reference;
+                decimal quantity = orderObjectData.OrderLines[i].Quantity;
+                decimal price = orderObjectData.OrderLines[i].ProductValue;
 
                 detailManager.SetItemID(KeyId);
                 detailManager.SetQuantity(quantity);

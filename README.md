@@ -12,7 +12,8 @@ This project is a runnable reference for third-party integrators who need to cal
 
 - 🔑 License and INI-based configuration bootstrap (`Constant`, `IniFile`, `XDLicence`)
 - 🗄️ Database connection and global data preloading (`Db`, `GlobalVars`)
-- 📄 Sales document generation from a JSON order payload (`SalesDocumentManager`)
+- 📄 Sales document generation from a typed JSON order payload (`OrderData` → `SalesDocumentManager`)
+- 🚚 Shipment costs (Portes) through a shipment item line (`ItemType 10`)
 - ✍️ Externally-signed document creation (custom `SignatureHashPT`/`SignatureStampPT`)
 - 🧾 Receipt document generation tied to the MSS Integration license module
 - 👤 Customer (`Entity`) and 📦 item (`ItemBE`) creation
@@ -23,7 +24,7 @@ This project is a runnable reference for third-party integrators who need to cal
 
 | Project | Role |
 |---|---|
-| `XD-API.csproj` | Console app entry point (`Program.cs`) and usage examples (`examples.cs`) |
+| `XD-API.csproj` | Console app entry point (`Program.cs`), usage examples (`examples.cs`) and typed order payload models (`OrderModels.cs`) |
 
 | Referenced Library | Purpose |
 |---|---|
@@ -88,9 +89,18 @@ The console menu in `RunMenu()` ([Program.cs](Program.cs)) exposes each example:
 5. **NewItem** — creates a sample `ItemBE`
 6. **GetItem** — looks up an item by `KeyId` from the preloaded global item list
 7. **GetUserPicture** — retrieves a user's stored picture
-8. **Exit**
+0. **Exit**
 
-Sample order payloads used by the document-generation examples live in [`examples.cs`](examples.cs) and [`json_example.txt`](json_example.txt).
+The sample order payload used by the document-generation examples is `SampleOrderJson` in [`Program.cs`](Program.cs) (see also [`json_example.txt`](json_example.txt)). It is deserialized into the typed models in [`OrderModels.cs`](OrderModels.cs) (`OrderData`, `OrderHeader`, `OrderLine`).
+
+### 🚚 Shipment costs (Portes)
+
+XD's `SalesDocumentManager.Calculate()` computes `ShipmentCosts` / `ShipmentNetCosts` **from the document lines whose item is `ItemType 10`** (e.g. `PORTES NAC`) and overwrites any value set directly on the header. To get shipment costs on a document, enter the shipment item as one of the item references in **GenerateDocument** — its line total becomes the document's shipment costs.
+
+## ⚠️ XD Gotchas
+
+- **Keep the save path statically typed.** `XDCrypt.GetSignatureHash` walks the stack trace and reads `DeclaringType.Name` of every frame. Calling a method with a `dynamic` argument (e.g. an order from `JsonConvert.DeserializeObject<dynamic>`) adds a runtime-binder frame without a declaring type, and saving a certified document fails with `NullReferenceException` in `SalesDocumentManager.SignCertifiedDocument`. That is why the order payload is deserialized into `OrderData`.
+- **Debugging the document before saving.** `GenerateDocument` serializes `manager.CurrentDocument` to a `json` variable right before `Save()` (debug only, not used). Put a breakpoint on `manager.Save()` to inspect it.
 
 ## 📦 Distribution
 
